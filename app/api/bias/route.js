@@ -1,6 +1,6 @@
 // app/api/bias/route.js
 export const runtime = 'nodejs'
-export const revalidate = 900
+export const dynamic = 'force-dynamic'
 
 import {
   computeATR, computeVWAP, computeRSI, computeADX,

@@ -425,9 +425,9 @@ export default function Page() {
   const fetchData = useCallback(async (force = false) => {
     if (force) setLoading(true)
     try {
-      const resp = await fetch(force ? '/api/bias?force=1' : '/api/bias', {
-        cache: force ? 'no-store' : 'default'
-      })
+      const ts = Date.now()
+      const url = `/api/bias?t=${ts}`
+      const resp = await fetch(url, { cache: 'no-store' })
       const json = await resp.json()
       if (json.status === 'ok') {
         setState({ status: 'ok', data: json.data, error: null, age: 0, ts: json.timestamp || new Date().toISOString() })
