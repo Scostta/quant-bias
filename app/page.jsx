@@ -22,12 +22,6 @@ const LEVEL_STYLE = {
   'MICRO DOMINATES': { color: '#ffab40', bg: 'rgba(255,171,64,.1)', border: 'rgba(255,171,64,.4)' },
   'TRUE CONFLICT': { color: '#ff4d7a', bg: 'rgba(255,77,122,.1)', border: 'rgba(255,77,122,.4)' },
 }
-const CAL_STYLE = {
-  'CLEAR': { color: '#00e5a0', border: 'rgba(0,229,160,.3)', bg: 'rgba(0,229,160,.04)' },
-  'MEDIUM': { color: '#38c6ff', border: 'rgba(56,198,255,.3)', bg: 'rgba(56,198,255,.04)' },
-  'HIGH': { color: '#ffab40', border: 'rgba(255,171,64,.3)', bg: 'rgba(255,171,64,.07)' },
-  'EXTREME': { color: '#ff4d7a', border: 'rgba(255,77,122,.5)', bg: 'rgba(255,77,122,.08)' },
-}
 
 // ─── atoms ─────────────────────────────────────────────────────────────────
 function Row({ label, value, color }) {
@@ -462,8 +456,6 @@ export default function Page() {
   }, [fetchData])
 
   const syms = state.data ? Object.keys(state.data) : []
-  const calData = state.data?.[syms[0]]?.calendar
-  const calSt = CAL_STYLE[calData?.riskLevel] || CAL_STYLE['CLEAR']
 
   return (
     <>
@@ -509,36 +501,19 @@ export default function Page() {
           </div>
         </div>
 
-        {/* ── CALENDAR BANNER ── */}
-        {calData && (
-          <div style={{
-            padding: '10px 20px', borderBottom: `2px solid ${calSt.border}`,
-            background: calSt.bg, display: 'flex', alignItems: 'flex-start', gap: 14
-          }}>
-            <div style={{
-              fontSize: 12, fontWeight: 800, letterSpacing: 2, color: calSt.color,
-              padding: '3px 10px', border: `1px solid ${calSt.border}`, flexShrink: 0
-            }}>
-              📅 {calData.riskLevel}
-            </div>
-            <div style={{ flex: 1, fontSize: 11, lineHeight: 1.7, color: '#8aa8bf' }}>
-              {calData.warnings?.length
-                ? calData.warnings.map((w, i) => (
-                  <span key={i} style={{ marginRight: 16 }}>
-                    <span style={{ color: w.impact === 'HIGH' ? '#ffab40' : '#38c6ff' }}>[{w.impact}]</span>
-                    {' '}{w.time} — {w.event}
-                  </span>
-                ))
-                : 'Sin eventos en la ventana 14:30–16:30 (hora España)'
-              }
-              {calData.shouldAvoid && (
-                <span style={{ color: '#ff4d7a', fontWeight: 700, marginLeft: 12 }}>
-                  ⛔ RIESGO EXTREMO
-                </span>
-              )}
-            </div>
-          </div>
-        )}
+        {/* ── STATIC NEWS DISCLAIMER ── */}
+        <div style={{
+          padding: '8px 20px', borderBottom: '1px solid #162130',
+          background: 'rgba(255,171,64,.04)',
+          display: 'flex', alignItems: 'center', gap: 10
+        }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: '#ffab40', letterSpacing: 1.5, flexShrink: 0 }}>
+            ⚠ NOTICIAS
+          </span>
+          <span style={{ fontSize: 10, color: '#6b8599', lineHeight: 1.5 }}>
+            Esta app NO filtra eventos macroeconómicos. Consulta el calendario (ForexFactory / Investing.com) antes de operar. NFP, FOMC, CPI = no operar.
+          </span>
+        </div>
 
         {/* ── LOADING ── */}
         {state.status === 'loading' && (
