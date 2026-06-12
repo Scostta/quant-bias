@@ -60,8 +60,13 @@ async function fetchBars(symbol, interval = '30m', days = 58) {
     { interval, period1: daysAgo(days), period2: new Date(), includePrePost: true },
     { validateResult: false }
   )
-  return (result?.quotes ?? []).map(normalizeQuote)
+  const bars = (result?.quotes ?? []).map(normalizeQuote)
     .filter(q => q.timestamp && q.open && q.high && q.low && q.close)
+  const noVolCount = bars.filter(b => b.volume == null).length
+  if (noVolCount > 0) {
+    console.warn(`[${symbol}] ${noVolCount}/${bars.length} bars have no volume data — excluded from VWAP`)
+  }
+  return bars
 }
 
 async function fetchDailyBars(symbol) {
@@ -296,7 +301,7 @@ async function analyzeSymbol(name, symbol) {
     overnightHigh: r(on.high), overnightLow: r(on.low), overnightBars: on.bars,
     probHigh: reg.high, probLow: reg.low, regTrend: reg.trend, trendStrength: reg.strength,
     slopeShort, slopeMedium,
-    dayType: dayType.type, dayProb: dayType.prob, dayScores: dayType.scores,
+    dayType: dayType.type, dayScore: dayType.score, dayScores: dayType.scores,
     orb: { high: orb.high, low: orb.low, range: orb.range, status: orb.status, signal: orb.signal, quality: orb.quality, qualityNote: orb.note, atrRatio: orb.ratio },
     momentum: { direction: mo.direction, signalIntensity: mo.signalIntensity, topFeature: mo.topFeature },
     macro: { direction: macro.direction, bullPct: macro.bullPct, score: macro.score },

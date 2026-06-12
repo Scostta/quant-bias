@@ -350,7 +350,7 @@ function SymbolPage({ d }) {
           <Sec title="◈ TIPO DE DÍA">
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
               <span style={{ color: '#38c6ff', fontWeight: 700, fontSize: 14 }}>{d.dayType}</span>
-              <span style={{ color: '#ffd166', fontWeight: 700, fontSize: 14 }}>{d.dayProb}%</span>
+              <span style={{ color: '#ffd166', fontWeight: 700, fontSize: 14 }}>score {d.dayScore}/100</span>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
               {Object.entries(d.dayScores || {}).map(([t, s]) => (
@@ -362,7 +362,7 @@ function SymbolPage({ d }) {
                     {t.replace(' DAY', '')}
                   </span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 11, color: t === d.dayType ? '#38c6ff' : '#e0eaf2' }}>{s}%</span>
+                    <span style={{ fontSize: 11, color: t === d.dayType ? '#38c6ff' : '#e0eaf2' }}>{s}</span>
                     <div style={{ width: 40, height: 3, background: '#162130', overflow: 'hidden' }}>
                       <div style={{
                         height: '100%', width: `${s}%`,
