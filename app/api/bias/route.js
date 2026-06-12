@@ -8,10 +8,21 @@ import {
 } from '../../../lib/indicators'
 import {
   computeMacroBias, computeMicroBias, conflictAnalysis,
-  classifyORB, classifyDayType, runBacktest
+  classifyORB, classifyDayType,
 } from '../../../lib/bias'
 
 const SYMBOLS = { NQ: 'NQ=F', ES: 'ES=F' }
+
+// ─── Session configuration — single source of truth ───────────────────────
+// All times in America/New_York (ET). Spain time is derived dynamically via Intl.
+const SESSION = {
+  tz:              'America/New_York',
+  cashOpenHour:    9,   // NYSE/CME regular session open: 9:30 ET
+  cashOpenMin:     30,
+  analysisEndHour: 11,  // bias evaluation window closes at 11:30 ET
+  analysisEndMin:  30,
+  orbBars:         1,   // number of 30-min bars that form the Opening Range
+}
 
 // ─── Yahoo Finance v3 (lazy import avoids module-level crash) ──────────────
 async function getYF() {
@@ -38,7 +49,7 @@ function normalizeQuote(q) {
     high: q.high ?? q.regularMarketDayHigh ?? null,
     low: q.low ?? q.regularMarketDayLow ?? null,
     close: q.close ?? q.regularMarketPrice ?? null,
-    volume: q.volume ?? q.regularMarketVolume ?? 1,
+    volume: q.volume ?? q.regularMarketVolume ?? null,
   }
 }
 
@@ -64,37 +75,180 @@ async function fetchDailyBars(symbol) {
     .filter(q => q.timestamp && q.open && q.close)
 }
 
-// ─── Overnight 18:00–08:29 ET ──────────────────────────────────────────────
-function overnightRange(bars) {
-  const todayET = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+// ─── Overnight 18:00 ET (prev day) – cash open (9:30 ET) ──────────────────
+// refDateET: 'YYYY-MM-DD' ET date of the day whose overnight we want.
+function overnightRange(bars, refDateET) {
+  const [y, mo, da] = refDateET.split('-').map(Number)
+  const prevDay = new Date(y, mo - 1, da - 1)
+  const prevDateET = `${prevDay.getFullYear()}-${String(prevDay.getMonth() + 1).padStart(2, '0')}-${String(prevDay.getDate()).padStart(2, '0')}`
+  const cashOpenMins = SESSION.cashOpenHour * 60 + SESSION.cashOpenMin
+
   const src = bars.filter(b => {
     const dt = new Date(b.timestamp)
-    const dateET = dt.toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
-    const hStr = dt.toLocaleTimeString('en-US', { hour: '2-digit', hour12: false, timeZone: 'America/New_York' })
-    const h = parseInt(hStr)
-    return (dateET < todayET && h >= 18) || (dateET === todayET && h < 8)
+    const dateET = dt.toLocaleDateString('en-CA', { timeZone: SESSION.tz })
+    const h = parseInt(dt.toLocaleTimeString('en-US', { hour: '2-digit', hour12: false, timeZone: SESSION.tz }))
+    const m = parseInt(dt.toLocaleTimeString('en-US', { minute: '2-digit', timeZone: SESSION.tz }))
+    return (dateET === prevDateET && h >= 18)
+      || (dateET === refDateET && (h * 60 + m) < cashOpenMins)
   })
   const use = src.length >= 2 ? src : bars.slice(-10)
   return { high: Math.max(...use.map(b => b.high)), low: Math.min(...use.map(b => b.low)), bars: use.length }
 }
 
-// ─── ORB first RTH bar ─────────────────────────────────────────────────────
+// ─── ORB — SESSION.orbBars × 30-min bars starting at 9:30 ET cash open ────
 function openingRange(bars, atr) {
-  const todayET = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+  const todayET = new Date().toLocaleDateString('en-CA', { timeZone: SESSION.tz })
+  const orbStartMins = SESSION.cashOpenHour * 60 + SESSION.cashOpenMin
+  const orbEndMins   = orbStartMins + SESSION.orbBars * 30
+
   let src = bars.filter(b => {
     const dt = new Date(b.timestamp)
-    const dateET = dt.toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
-    const h = parseInt(dt.toLocaleTimeString('en-US', { hour: '2-digit', hour12: false, timeZone: 'America/New_York' }))
-    const m = parseInt(dt.toLocaleTimeString('en-US', { minute: '2-digit', timeZone: 'America/New_York' }))
-    return dateET === todayET && h === 8 && m >= 30
+    if (dt.toLocaleDateString('en-CA', { timeZone: SESSION.tz }) !== todayET) return false
+    const h = parseInt(dt.toLocaleTimeString('en-US', { hour: '2-digit', hour12: false, timeZone: SESSION.tz }))
+    const m = parseInt(dt.toLocaleTimeString('en-US', { minute: '2-digit', timeZone: SESSION.tz }))
+    const mins = h * 60 + m
+    return mins >= orbStartMins && mins < orbEndMins
   })
-  if (!src.length) src = bars.filter(b => new Date(b.timestamp).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }) === todayET).slice(0, 1)
-  if (!src.length) return { high: null, low: null, quality: 'N/A', note: 'No ORB bars yet', signal: 'NEUTRAL', status: 'N/A', range: null, ratio: null }
+  if (!src.length) return { high: null, low: null, quality: 'N/A', note: 'Cash session not open yet (9:30 ET)', signal: 'NEUTRAL', status: 'N/A', range: null, ratio: null }
 
   const high = Math.max(...src.map(b => b.high))
   const low = Math.min(...src.map(b => b.low))
   const price = bars.at(-1).close
   return { high, low, ...classifyORB({ orbHigh: high, orbLow: low, price, atr }) }
+}
+
+// ─── Wilson binomial 95% CI ────────────────────────────────────────────────
+function binomialCI95(k, n) {
+  if (n === 0) return { lo: 0, hi: 100, margin: 50 }
+  const p = k / n, z = 1.96, z2 = z * z
+  const denom  = 1 + z2 / n
+  const center = (p + z2 / (2 * n)) / denom
+  const margin = z * Math.sqrt(p * (1 - p) / n + z2 / (4 * n * n)) / denom
+  return {
+    lo:     Math.round(Math.max(0, center - margin) * 1000) / 10,
+    hi:     Math.round(Math.min(1, center + margin) * 1000) / 10,
+    margin: Math.round(margin * 1000) / 10,
+  }
+}
+
+// ─── Full-pipeline backtest ────────────────────────────────────────────────
+// Runs the EXACT same indicator/signal pipeline as the live analyzeSymbol call.
+// Look-ahead guard: signal is computed using only bars strictly before 9:30 ET.
+// Outcome: direction of open→close return in the 9:30–11:30 ET window.
+// True-Conflict days (system said stand aside) and noise days (move < 0.05%)
+// are excluded from accuracy and counted separately.
+// Data limit: Yahoo Finance 30-min history covers ~60 calendar days.
+function runBacktest(allBars) {
+  const byDate = {}
+  for (const b of allBars) {
+    const key = new Date(b.timestamp).toLocaleDateString('en-CA', { timeZone: SESSION.tz })
+    if (!byDate[key]) byDate[key] = []
+    byDate[key].push(b)
+  }
+
+  const dates = Object.keys(byDate).sort()
+  const results = []
+  let noiseDays = 0, conflictDays = 0
+
+  const cashOpenMins    = SESSION.cashOpenHour * 60 + SESSION.cashOpenMin
+  const analysisEndMins = SESSION.analysisEndHour * 60 + SESSION.analysisEndMin
+
+  for (let di = 3; di < dates.length; di++) {
+    try {
+      const date    = dates[di]
+      const dayBars = byDate[date]
+
+      // Outcome: 9:30–11:30 ET window
+      const cashBars = dayBars.filter(b => {
+        const dt = new Date(b.timestamp)
+        const h  = parseInt(dt.toLocaleTimeString('en-US', { hour: '2-digit', hour12: false, timeZone: SESSION.tz }))
+        const m  = parseInt(dt.toLocaleTimeString('en-US', { minute: '2-digit', timeZone: SESSION.tz }))
+        const mins = h * 60 + m
+        return mins >= cashOpenMins && mins < analysisEndMins
+      })
+      if (cashBars.length < 2) continue
+
+      const openP   = cashBars[0].open
+      const closeP  = cashBars[cashBars.length - 1].close
+      const movePct = Math.abs(closeP - openP) / openP * 100
+
+      if (movePct < 0.05) { noiseDays++; continue }
+
+      const actual = closeP > openP ? 'BULLISH' : 'BEARISH'
+
+      // Signal input: last 3 full days + today's bars strictly before 9:30 ET
+      const preBars = dates.slice(Math.max(0, di - 3), di)
+        .flatMap(d => byDate[d])
+        .concat(dayBars.filter(b => {
+          const dt = new Date(b.timestamp)
+          const h  = parseInt(dt.toLocaleTimeString('en-US', { hour: '2-digit', hour12: false, timeZone: SESSION.tz }))
+          const m  = parseInt(dt.toLocaleTimeString('en-US', { minute: '2-digit', timeZone: SESSION.tz }))
+          return h * 60 + m < cashOpenMins
+        }))
+
+      if (preBars.length < 30) continue
+
+      // Same pipeline as analyzeSymbol (no look-ahead)
+      const atrArr   = computeATR(preBars)
+      const atr      = atrArr.at(-1) || 1
+      const vwapArr  = computeVWAP(preBars)
+      const vwap     = vwapArr.at(-1)
+      const rsiArr   = computeRSI(preBars)
+      const rsi      = rsiArr.at(-1) ?? null
+      const { adx, plusDI, minusDI } = computeADX(preBars)
+      const slopeShort  = rollingSlope(preBars, 10).at(-1) ?? 0
+      const slopeMedium = rollingSlope(preBars, 24).at(-1) ?? 0
+      const reg  = regressionRange(preBars, atr)
+      const on   = overnightRange(preBars, date)
+      const price = preBars.at(-1).close
+      const ml    = mlBiasLightweight(preBars, vwapArr, atrArr, rsiArr)
+
+      const macro    = computeMacroBias({ regTrend: reg.trend, adx, plusDI, minusDI, price, vwap, onHigh: on.high, onLow: on.low, slopeMedium })
+      // ORB is NEUTRAL at signal time: the 9:30 bar hasn't closed yet
+      const micro    = computeMicroBias({ mlDir: ml.direction, mlConf: ml.confidence, orbSignal: 'NEUTRAL', rsi, price, vwap, slopeShort })
+      const conflict = conflictAnalysis({ macroDir: macro.direction, macroScore: macro.score, microDir: micro.direction, microScore: micro.score, adx })
+
+      let predicted
+      if (conflict.level === 'TRUE CONFLICT') { conflictDays++; continue }
+      else if (conflict.level === 'MICRO DOMINATES') predicted = micro.direction
+      else predicted = macro.direction
+
+      results.push({
+        date, predicted, actual,
+        correct:  predicted === actual,
+        movePct:  Math.round(movePct * 1000) / 1000,
+        open: openP, close: closeP,
+      })
+    } catch (_) { continue }
+  }
+
+  if (results.length === 0) return { error: 'not enough data', accuracy: null, ci: null, last10: [] }
+
+  const n       = results.length
+  const correct = results.filter(r => r.correct).length
+  const accuracy  = Math.round(correct / n * 1000) / 10
+  const ci        = binomialCI95(correct, n)
+
+  const strongDays = results.filter(r => r.movePct >= 0.1)
+  const strongAcc  = strongDays.length ? Math.round(strongDays.filter(r => r.correct).length / strongDays.length * 1000) / 10 : null
+  const bullDays   = results.filter(r => r.actual === 'BULLISH')
+  const bearDays   = results.filter(r => r.actual === 'BEARISH')
+  const bullAcc    = bullDays.length ? Math.round(bullDays.filter(r => r.correct).length / bullDays.length * 1000) / 10 : null
+  const bearAcc    = bearDays.length ? Math.round(bearDays.filter(r => r.correct).length / bearDays.length * 1000) / 10 : null
+
+  let streak = 0
+  for (let i = n - 1; i >= 0; i--) {
+    if (results[i].correct) streak++; else break
+  }
+
+  return {
+    totalDays: n, correct, accuracy, ci,
+    strongAcc, bullAcc, bearAcc, streak,
+    noiseDays, conflictDays,
+    avgMove:   Math.round(results.reduce((a, r) => a + r.movePct, 0) / n * 100) / 100,
+    last10:    results.slice(-10),
+    note:      'Data limit: ~60 calendar days (Yahoo Finance 30-min). Evaluation: 9:30–11:30 ET open→close.',
+  }
 }
 
 // ─── Main per-symbol analysis ──────────────────────────────────────────────
@@ -113,7 +267,8 @@ async function analyzeSymbol(name, symbol) {
   const slopeShort = rollingSlope(bars, 10).at(-1) || 0
   const slopeMedium = rollingSlope(bars, 24).at(-1) || 0
   const reg = regressionRange(bars, atr)
-  const on = overnightRange(bars)
+  const todayET = new Date().toLocaleDateString('en-CA', { timeZone: SESSION.tz })
+  const on = overnightRange(bars, todayET)
   const orb = openingRange(bars, atr)
   const prev = daily.at(-2) || daily.at(-1)
   const gap = Math.round((bars[0].open - prev.close) * 100) / 100
@@ -131,7 +286,7 @@ async function analyzeSymbol(name, symbol) {
   return {
     name, symbol,
     price: r(price), atr: r(atr), vwap: r(vwap),
-    vwapDistPct: Math.round((price - vwap) / vwap * 10000) / 100,
+    vwapDistPct: vwap != null ? Math.round((price - vwap) / vwap * 10000) / 100 : null,
     rsi: Math.round(rsi * 10) / 10,
     adx: Math.round(adx * 10) / 10,
     plusDI: Math.round(plusDI * 10) / 10, minusDI: Math.round(minusDI * 10) / 10,
