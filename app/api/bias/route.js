@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic'
 
 import {
   computeATR, computeVWAP, computeRSI, computeADX,
-  rollingSlope, regressionRange, mlBiasLightweight
+  rollingSlope, regressionRange, computeMomentumScore
 } from '../../../lib/indicators'
 import {
   computeMacroBias, computeMicroBias, conflictAnalysis,
@@ -201,11 +201,11 @@ function runBacktest(allBars) {
       const reg  = regressionRange(preBars, atr)
       const on   = overnightRange(preBars, date)
       const price = preBars.at(-1).close
-      const ml    = mlBiasLightweight(preBars, vwapArr, atrArr, rsiArr)
+      const mo    = computeMomentumScore(preBars, vwapArr, atrArr, rsiArr)
 
       const macro    = computeMacroBias({ regTrend: reg.trend, adx, plusDI, minusDI, price, vwap, onHigh: on.high, onLow: on.low, slopeMedium })
       // ORB is NEUTRAL at signal time: the 9:30 bar hasn't closed yet
-      const micro    = computeMicroBias({ mlDir: ml.direction, mlConf: ml.confidence, orbSignal: 'NEUTRAL', rsi, price, vwap, slopeShort })
+      const micro    = computeMicroBias({ moDir: mo.direction, moIntensity: mo.signalIntensity, orbSignal: 'NEUTRAL', rsi, price, vwap, slopeShort })
       const conflict = conflictAnalysis({ macroDir: macro.direction, macroScore: macro.score, microDir: micro.direction, microScore: micro.score, adx })
 
       let predicted
@@ -276,10 +276,10 @@ async function analyzeSymbol(name, symbol) {
   const buf = (prev.high - prev.low) * 0.001
   const sweep = price > prev.high + buf ? 'HIGH SWEEP' : price < prev.low - buf ? 'LOW SWEEP' : 'NONE'
   const dayType = classifyDayType({ onHigh: on.high, onLow: on.low, atr, adx, prevHigh: prev.high, prevLow: prev.low })
-  const ml = mlBiasLightweight(bars, vwapArr, atrArr, rsiArr)
+  const mo = computeMomentumScore(bars, vwapArr, atrArr, rsiArr)
   const macro = computeMacroBias({ regTrend: reg.trend, adx, plusDI, minusDI, price, vwap, onHigh: on.high, onLow: on.low, slopeMedium })
-  const micro = computeMicroBias({ mlDir: ml.direction, mlConf: ml.confidence, orbSignal: orb.signal, rsi, price, vwap, slopeShort })
-  const conflict = conflictAnalysis({ macroDir: macro.direction, macroScore: macro.score, microDir: micro.direction, microScore: micro.score, modelAcc: 55, adx })
+  const micro = computeMicroBias({ moDir: mo.direction, moIntensity: mo.signalIntensity, orbSignal: orb.signal, rsi, price, vwap, slopeShort })
+  const conflict = conflictAnalysis({ macroDir: macro.direction, macroScore: macro.score, microDir: micro.direction, microScore: micro.score, adx })
   const backtest = runBacktest(bars)
   const r = v => Math.round((v ?? 0) * 100) / 100
 
@@ -297,7 +297,7 @@ async function analyzeSymbol(name, symbol) {
     slopeShort, slopeMedium,
     dayType: dayType.type, dayProb: dayType.prob, dayScores: dayType.scores,
     orb: { high: orb.high, low: orb.low, range: orb.range, status: orb.status, signal: orb.signal, quality: orb.quality, qualityNote: orb.note, atrRatio: orb.ratio },
-    ml: { direction: ml.direction, confidence: ml.confidence, topFeature: ml.topFeature },
+    momentum: { direction: mo.direction, signalIntensity: mo.signalIntensity, topFeature: mo.topFeature },
     macro: { direction: macro.direction, bullPct: macro.bullPct, score: macro.score },
     micro: { direction: micro.direction, bullPct: micro.bullPct, score: micro.score },
     conflict, backtest,

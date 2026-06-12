@@ -216,7 +216,7 @@ function SymbolPage({ d }) {
   const lvl = LEVEL_STYLE[c.level] || LEVEL_STYLE['MODERATE']
   const mac = d.macro || {}
   const mic = d.micro || {}
-  const ml = d.ml || {}
+  const mo = d.momentum || {}
   const orb = d.orb || {}
   const bt = d.backtest
   const macCol = mac.direction === 'BULLISH' ? '#00e5a0' : '#ff4d7a'
@@ -268,8 +268,8 @@ function SymbolPage({ d }) {
           },
           {
             title: '◈ MICRO (scalp)', dir: mic.direction, pct: mic.bullPct, score: mic.score, col: micCol,
-            rows: [['ML', ml.direction, cc(ml.direction)], ['ORB', orb.status?.replace('BREAKOUT ', 'B.'), cc(orb.signal)],
-            ['ACC', `${ml.confidence}%`, ml.confidence > 60 ? '#00e5a0' : '#ffab40']],
+            rows: [['MOM', mo.direction, cc(mo.direction)], ['ORB', orb.status?.replace('BREAKOUT ', 'B.'), cc(orb.signal)],
+            ['INT', `${mo.signalIntensity ?? 0}/100`, mo.signalIntensity > 60 ? '#00e5a0' : '#ffab40']],
             slope: ['SHORT', d.slopeShort]
           },
         ].map(layer => (
@@ -309,13 +309,14 @@ function SymbolPage({ d }) {
 
         {/* LEFT col */}
         <div>
-          {/* ML */}
-          <Sec title="◈ ML MODEL">
+          {/* MOMENTUM SCORE */}
+          <Sec title="◈ MOMENTUM SCORE">
             <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-              <MLRing conf={ml.confidence} direction={ml.direction} />
+              <MLRing conf={mo.signalIntensity ?? 0} direction={mo.direction} />
               <div style={{ flex: 1 }}>
-                <Row label="SEÑAL" value={ml.direction} color={cc(ml.direction)} />
-                <Row label="TOP FEAT" value={ml.topFeature} color='#38c6ff' />
+                <Row label="SEÑAL" value={mo.direction} color={cc(mo.direction)} />
+                <Row label="INTENSIDAD" value={`${mo.signalIntensity ?? 0}/100`} color={mo.signalIntensity > 60 ? '#00e5a0' : '#ffab40'} />
+                <Row label="TOP FEAT" value={mo.topFeature} color='#38c6ff' />
               </div>
             </div>
           </Sec>
