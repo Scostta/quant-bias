@@ -154,23 +154,36 @@ function LevelsViz({ d }) {
 
 function BacktestPanel({ bt }) {
   if (!bt || bt.error || !bt.accuracy) return (
-    <Sec title="◈ BACKTEST 14:30–16:30 ES">
-      <div style={{ color: '#ffab40', fontSize: 11, padding: '4px 0' }}>⚠ {bt?.error || 'Sin datos'}</div>
+    <Sec title="◈ BACKTEST 9:30–11:30 ET">
+      <div style={{ color: '#ffab40', fontSize: 11, padding: '4px 0' }}>⚠ {bt?.error || 'Sin datos suficientes'}</div>
     </Sec>
   )
   const ac = bt.accuracy >= 55 ? '#00e5a0' : bt.accuracy >= 50 ? '#ffab40' : '#ff4d7a'
+  const ciLabel = bt.ci ? `±${bt.ci.margin}pp` : ''
   return (
-    <Sec title={`◈ BACKTEST 14:30–16:30 ES (${bt.totalDays}d)`}>
+    <Sec title={`◈ BACKTEST 9:30–11:30 ET (n=${bt.totalDays})`}>
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 22, fontWeight: 800, color: ac, letterSpacing: 1 }}>
+          {bt.accuracy}%
+          <span style={{ fontSize: 11, color: '#6b8599', fontWeight: 400, marginLeft: 8 }}>
+            {ciLabel} IC 95%
+          </span>
+        </div>
+        <div style={{ fontSize: 10, color: '#4a6e85', marginTop: 2 }}>
+          {bt.note}
+        </div>
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginBottom: 12 }}>
-        <StatBox value={`${bt.accuracy}%`} label="ACCURACY" color={ac} />
-        <StatBox value={bt.strongAcc ? `${bt.strongAcc}%` : '—'} label="STRONG" color={ac} />
+        <StatBox value={bt.strongAcc ? `${bt.strongAcc}%` : '—'} label="STRONG (>0.1%)" color={ac} />
         <StatBox value={bt.streak || 0} label="STREAK" color='#ffd166' />
         <StatBox value={`${bt.avgMove || '—'}%`} label="AVG MOVE" />
+        <StatBox value={bt.noiseDays ?? '—'} label="NOISE EX." color='#4a6e85' />
       </div>
       <Row label="BULL ACC" value={bt.bullAcc ? `${bt.bullAcc}%` : '—'}
         color={bt.bullAcc >= 55 ? '#00e5a0' : '#ffab40'} />
       <Row label="BEAR ACC" value={bt.bearAcc ? `${bt.bearAcc}%` : '—'}
         color={bt.bearAcc >= 55 ? '#00e5a0' : '#ffab40'} />
+      <Row label="CONFLICTO EX." value={bt.conflictDays ?? '—'} color='#4a6e85' />
       <div style={{ marginTop: 10 }}>
         {(bt.last10 || []).slice().reverse().map((r, i) => (
           <div key={i} style={{
