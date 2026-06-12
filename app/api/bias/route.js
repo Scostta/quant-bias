@@ -262,7 +262,7 @@ async function analyzeSymbol(name, symbol) {
   const vwapArr = computeVWAP(bars)
   const vwap = vwapArr.at(-1)
   const rsiArr = computeRSI(bars)
-  const rsi = rsiArr.at(-1) || 50
+  const rsi = rsiArr.at(-1) ?? null
   const { adx, plusDI, minusDI } = computeADX(bars)
   const slopeShort = rollingSlope(bars, 10).at(-1) || 0
   const slopeMedium = rollingSlope(bars, 24).at(-1) || 0
@@ -287,9 +287,10 @@ async function analyzeSymbol(name, symbol) {
     name, symbol,
     price: r(price), atr: r(atr), vwap: r(vwap),
     vwapDistPct: vwap != null ? Math.round((price - vwap) / vwap * 10000) / 100 : null,
-    rsi: Math.round(rsi * 10) / 10,
-    adx: Math.round(adx * 10) / 10,
-    plusDI: Math.round(plusDI * 10) / 10, minusDI: Math.round(minusDI * 10) / 10,
+    rsi: rsi != null ? Math.round(rsi * 10) / 10 : null,
+    adx: adx != null ? Math.round(adx * 10) / 10 : null,
+    plusDI:  plusDI  != null ? Math.round(plusDI  * 10) / 10 : null,
+    minusDI: minusDI != null ? Math.round(minusDI * 10) / 10 : null,
     prevHigh: prev.high, prevLow: prev.low, prevClose: prev.close,
     gap, gapPct, sweep,
     overnightHigh: r(on.high), overnightLow: r(on.low), overnightBars: on.bars,
