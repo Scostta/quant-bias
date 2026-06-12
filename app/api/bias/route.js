@@ -302,6 +302,7 @@ async function analyzeSymbol(name, symbol) {
     macro: { direction: macro.direction, bullPct: macro.bullPct, score: macro.score },
     micro: { direction: micro.direction, bullPct: micro.bullPct, score: micro.score },
     conflict, backtest,
+    lastBarTs: bars.at(-1)?.timestamp ?? null,
   }
 }
 

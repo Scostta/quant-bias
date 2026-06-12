@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 const cc = v => {
@@ -86,6 +86,33 @@ function MLRing({ conf, direction }) {
         justifyContent: 'center', color: col, fontSize: 13, fontWeight: 700
       }}>{conf}%</div>
     </div>
+  )
+}
+
+function DataDelayBadge({ lastBarTs }) {
+  const [delayMin, setDelayMin] = React.useState(null)
+  React.useEffect(() => {
+    if (!lastBarTs) return
+    const update = () => setDelayMin(Math.round((Date.now() - lastBarTs) / 60000))
+    update()
+    const id = setInterval(update, 30000)
+    return () => clearInterval(id)
+  }, [lastBarTs])
+
+  if (delayMin === null) return null
+  const stale = delayMin > 45
+  const color = stale ? '#ff4d7a' : delayMin > 20 ? '#ffab40' : '#6b8599'
+  const barTime = new Intl.DateTimeFormat('es-ES', {
+    timeZone: SPAIN_TZ, hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(new Date(lastBarTs))
+
+  return (
+    <span style={{
+      fontSize: 9, letterSpacing: 1, color, padding: '2px 7px',
+      border: `1px solid ${color}40`, marginLeft: 8
+    }}>
+      {stale ? '⚠ ' : ''}DELAY ~{delayMin}m · última barra {barTime}
+    </span>
   )
 }
 
@@ -213,8 +240,9 @@ function SymbolPage({ d }) {
   const mo = d.momentum || {}
   const orb = d.orb || {}
   const bt = d.backtest
-  const macCol = mac.direction === 'BULLISH' ? '#00e5a0' : '#ff4d7a'
-  const micCol = mic.direction === 'BULLISH' ? '#00e5a0' : '#ff4d7a'
+  const macCol  = mac.direction === 'BULLISH' ? '#00e5a0' : '#ff4d7a'
+  const micCol  = mic.direction === 'BULLISH' ? '#00e5a0' : '#ff4d7a'
+  const microStale = d.lastBarTs && (Date.now() - d.lastBarTs) > 45 * 60 * 1000
   const ORB_Q = { NORMAL: '#00e5a0', EXTENDED: '#ffab40', COMPRESSED: '#c084fc' }
 
   return (
@@ -222,8 +250,11 @@ function SymbolPage({ d }) {
 
       {/* ── ASSESSMENT ── */}
       <div style={{ padding: '16px 20px', borderBottom: '1px solid #162130' }}>
-        <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: 4, color: '#38c6ff', marginBottom: 4 }}>
-          {d.name}
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
+          <span style={{ fontSize: 28, fontWeight: 800, letterSpacing: 4, color: '#38c6ff' }}>
+            {d.name}
+          </span>
+          <DataDelayBadge lastBarTs={d.lastBarTs} />
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
           <span style={{ fontSize: 26, fontWeight: 700, color: cc(d.gap), letterSpacing: 1 }}>
@@ -261,7 +292,7 @@ function SymbolPage({ d }) {
             slope: ['MED', d.slopeMedium]
           },
           {
-            title: '◈ MICRO (scalp)', dir: mic.direction, pct: mic.bullPct, score: mic.score, col: micCol,
+            title: microStale ? '◈ MICRO (scalp) — SEÑAL OBSOLETA >45min' : '◈ MICRO (scalp)', dir: mic.direction, pct: mic.bullPct, score: mic.score, col: microStale ? '#4a6e85' : micCol,
             rows: [['MOM', mo.direction, cc(mo.direction)], ['ORB', orb.status?.replace('BREAKOUT ', 'B.'), cc(orb.signal)],
             ['INT', `${mo.signalIntensity ?? 0}/100`, mo.signalIntensity > 60 ? '#00e5a0' : '#ffab40']],
             slope: ['SHORT', d.slopeShort]
